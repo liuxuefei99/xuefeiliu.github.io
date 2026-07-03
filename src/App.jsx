@@ -1,30 +1,83 @@
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
 import {
   ArrowUpRight,
   Award,
   BookOpenText,
-  CalendarDays,
   Dna,
   FlaskConical,
+  Flame,
   GraduationCap,
   Mail,
   MapPin,
-  Microscope,
   ScanLine,
   Users,
 } from "lucide-react";
 import {
   awards,
+  dxTeam,
   education,
-  metrics,
+  journalMeta,
+  labOverview,
+  principalInvestigator,
   profile,
   projects,
   publications,
   researchInterests,
-  statusItems,
   team,
 } from "./data.js";
+
+const contentTabs = [
+  { id: "publications", label: "发表论文", icon: BookOpenText },
+  { id: "projects", label: "项目与荣誉", icon: FlaskConical },
+  { id: "team", label: "团队介绍", icon: Users },
+];
+const contentTabIds = contentTabs.map((tab) => tab.id);
+
+const chineseRank = {
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+};
+
+function getCoFirstCount(role) {
+  const match = role.match(/共同一作排名第([一二三四五六七八九十]+)/);
+  return match ? (chineseRank[match[1]] ?? 0) : 0;
+}
+
+function isXuefeiAuthor(author) {
+  return author === "Liu X" || author === "Liu XF";
+}
+
+function getCoFirstAuthors(paper, authors) {
+  if (paper.equalAuthors?.length) {
+    return new Set(paper.equalAuthors);
+  }
+
+  const coFirstCount = getCoFirstCount(paper.role);
+  return new Set(authors.slice(0, coFirstCount));
+}
+
+function getCorrespondingAuthors(paper, authors) {
+  if (paper.correspondingAuthors?.length) {
+    return new Set(paper.correspondingAuthors);
+  }
+
+  const correspondingAuthors = new Set();
+  if (paper.role.includes("共同通讯作者")) {
+    authors.filter(isXuefeiAuthor).forEach((author) => correspondingAuthors.add(author));
+  }
+  if (paper.role.includes("最后通讯作者") && authors.length) {
+    correspondingAuthors.add(authors[authors.length - 1]);
+  }
+  return correspondingAuthors;
+}
 
 const cellDots = Array.from({ length: 34 }, (_, index) => ({
   id: index,
@@ -57,32 +110,55 @@ function AnimatedCells() {
   );
 }
 
-function QRPanel() {
-  const [qrSrc, setQrSrc] = useState("");
-  const [pageUrl, setPageUrl] = useState("");
-
-  useEffect(() => {
-    const url = window.location.href;
-    setPageUrl(url);
-    QRCode.toDataURL(url, {
-      width: 168,
-      margin: 1,
-      color: { dark: "#12324a", light: "#ffffff" },
-    }).then(setQrSrc);
-  }, []);
-
+function QRItem({ title, image, alt, helper, href }) {
   return (
     <div className="qr-panel">
       <div className="qr-title">
         <ScanLine size={17} />
-        <span>主页二维码</span>
+        <span>{title}</span>
+        {href ? (
+          <a href={href} target="_blank" rel="noreferrer">
+            打开
+            <ArrowUpRight size={13} />
+          </a>
+        ) : null}
       </div>
       <div className="qr-content">
         <div className="qr-frame">
-          {qrSrc ? <img src={qrSrc} alt="个人主页二维码" /> : <span />}
+          {image ? (
+            <img src={image} alt={alt} />
+          ) : (
+            <span className="qr-placeholder">待放入二维码</span>
+          )}
         </div>
-        <p>{pageUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}</p>
+        {href ? (
+          <a className="qr-helper" href={href} target="_blank" rel="noreferrer">
+            {helper}
+          </a>
+        ) : (
+          <p>{helper}</p>
+        )}
       </div>
+    </div>
+  );
+}
+
+function QRPanel() {
+  return (
+    <div className="qr-stack">
+      <QRItem
+        title="个人微信"
+        image={profile.wechatQr}
+        alt="个人微信二维码"
+        helper="扫码添加个人微信"
+      />
+      <QRItem
+        title="Google Scholar"
+        image={profile.scholarQr}
+        alt="Google Scholar 二维码"
+        helper="扫码查看谷歌学术"
+        href={profile.scholarUrl}
+      />
     </div>
   );
 }
@@ -90,7 +166,7 @@ function QRPanel() {
 function SectionHeading({ eyebrow, title, intro }) {
   return (
     <div className="section-heading">
-      <span>{eyebrow}</span>
+      {eyebrow ? <span>{eyebrow}</span> : null}
       <h2>{title}</h2>
       {intro ? <p>{intro}</p> : null}
     </div>
@@ -105,7 +181,11 @@ function HeroProfileCard() {
         <h2>{profile.chineseName}</h2>
         <span>{profile.name}</span>
       </div>
-      <p className="profile-title">{profile.title}</p>
+      <p className="profile-title">
+        {profile.title.split("、").map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+      </p>
       <div className="profile-meta">
         <a href={`mailto:${profile.emails[0]}`}>
           <Mail size={17} />
@@ -125,55 +205,39 @@ function HeroProfileCard() {
   );
 }
 
-function Hero() {
+function PageLayout({ activeTab }) {
   return (
-    <section className="hero" id="home">
+    <section className="page-layout" id="home">
       <HeroProfileCard />
-      <div className="hero-main">
-        <div className="hero-badge">
-          <Dna size={18} />
-          <span>单细胞空间组学 / 计算生物学</span>
-        </div>
-        <h1>
-          刘雪飞
-          <span>Xuefei Liu</span>
-        </h1>
-        <p className="hero-lede">{profile.focus}</p>
-        <p className="hero-summary">
-          目前关注单细胞转录组、空间组学与肿瘤微环境互作，尝试从细胞状态、
-          空间位置和分子通讯三个层面理解肿瘤转移过程。
-        </p>
-        <div className="hero-actions">
-          <a className="primary-action" href={`mailto:${profile.emails[0]}`}>
-            <Mail size={18} />
-            联系我
-          </a>
-          <a href="#publications">
-            <BookOpenText size={18} />
-            查看论文
-          </a>
-        </div>
-        <div className="metric-grid">
-          {metrics.map((metric) => (
-            <div className="metric" key={metric.label}>
-              <strong>{metric.value}</strong>
-              <span>{metric.label}</span>
-            </div>
-          ))}
-        </div>
+      <div className="content-column">
+        <HomeOverview />
+        <TabbedContent activeTab={activeTab} />
       </div>
     </section>
   );
 }
 
-function Overview() {
+function HomeOverview() {
+  const lastJournal = principalInvestigator.journals.at(-1);
+  const leadingJournals = principalInvestigator.journals.slice(0, -1);
+  const lastReviewerJournal = principalInvestigator.reviewerJournals.at(-1);
+  const leadingReviewerJournals = principalInvestigator.reviewerJournals.slice(0, -1);
+
   return (
-    <section className="overview">
-      <article className="overview-panel research-panel">
-        <SectionHeading eyebrow="Research" title="研究方向" />
-        <p>
-          聚焦肿瘤转移、单细胞与空间组学、肿瘤-内皮-免疫互作，以及循环肿瘤细胞相关机制。
-        </p>
+    <section className="home-overview">
+      <p className="hero-focus">
+        <Dna size={18} />
+        <span>{profile.focus}</span>
+      </p>
+
+      <article className="overview-panel">
+        <SectionHeading title={labOverview.title} />
+        <p>{labOverview.body}</p>
+        <ol className="overview-list">
+          {labOverview.points.map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ol>
         <div className="chip-list">
           {researchInterests.map((interest) => (
             <span key={interest}>{interest}</span>
@@ -182,7 +246,27 @@ function Overview() {
       </article>
 
       <article className="overview-panel">
-        <SectionHeading eyebrow="Education" title="教育经历" />
+        <SectionHeading title={principalInvestigator.title} />
+        {principalInvestigator.body && <p>{principalInvestigator.body}</p>}
+        <p>
+          现已以第一作者或通讯作者（含共同）在{" "}
+          {leadingJournals.map((journal) => (
+            <span key={journal}>
+              <em>{journal}</em>、
+            </span>
+          ))}
+          <em>{lastJournal}</em> 等国际高影响力杂志发表论文 {publications.length} 篇，累计影响因子{" "}
+          <strong>{principalInvestigator.cumulativeImpactFactor}</strong>，持续推动计算分析与机制研究之间的双向验证。
+        </p>
+        <p>
+          获得{principalInvestigator.grant}，担任{" "}
+          {leadingReviewerJournals.map((journal) => (
+            <span key={journal}>
+              <em>{journal}</em>、
+            </span>
+          ))}
+          <em>{lastReviewerJournal}</em> 等杂志审稿人。
+        </p>
         <div className="timeline">
           {education.map((item) => (
             <div className="timeline-row" key={item.school}>
@@ -196,47 +280,50 @@ function Overview() {
           ))}
         </div>
       </article>
-
-      <article className="overview-panel status-panel">
-        <SectionHeading eyebrow="Status" title="当前状态" />
-        <div className="status-list">
-          {statusItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div className="status-item" key={item.label}>
-                <Icon size={18} />
-                <div>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </article>
     </section>
   );
 }
 
 function Publications() {
   return (
-    <section className="page-section" id="publications">
-      <SectionHeading
-        eyebrow="Publications"
-        title="代表性论文"
-        intro="保留英文题名和期刊名，方便学术检索；作者贡献和状态用中文说明。"
-      />
+    <div className="tab-content">
+      <SectionHeading title="发表论文" />
       <div className="publication-grid">
         {publications.map((paper) => {
+          const journal = journalMeta[paper.journal] ?? {
+            name: paper.journal,
+            impactFactor: "待补",
+          };
+          const authors = paper.authors.split(", ");
+          const coFirstAuthors = getCoFirstAuthors(paper, authors);
+          const correspondingAuthors = getCorrespondingAuthors(paper, authors);
           const content = (
             <>
               <div className="paper-tags">
-                <span>{paper.journal}</span>
-                <span>{paper.year}</span>
-                <span>{paper.role}</span>
+                <span className="journal-tag">
+                  <em>{journal.name}</em>
+                </span>
+                <span className="impact-tag">IF {journal.impactFactor}</span>
+                <span className="year-tag">{paper.year}</span>
+                <span className="role-tag">{paper.role}</span>
               </div>
               <h3>{paper.title}</h3>
-              <p>{paper.authors}</p>
+              <p className="paper-authors">
+                {authors.map((author, index) => {
+                  const isCoFirst = coFirstAuthors.has(author);
+                  const isCorresponding = correspondingAuthors.has(author);
+                  const text = isXuefeiAuthor(author) ? <strong>{author}</strong> : author;
+
+                  return (
+                    <span className="author-token" key={`${paper.title}-${author}-${index}`}>
+                      {text}
+                      {isCoFirst ? <sup>#</sup> : null}
+                      {isCorresponding ? <sup>*</sup> : null}
+                      {index < authors.length - 1 ? ", " : null}
+                    </span>
+                  );
+                })}
+              </p>
             </>
           );
 
@@ -256,21 +343,24 @@ function Publications() {
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }
 
 function ProjectsAwards() {
   return (
-    <section className="page-section" id="projects">
-      <SectionHeading eyebrow="Projects & Awards" title="项目与荣誉" />
+    <div className="tab-content">
+      <SectionHeading title="项目与荣誉" />
       <div className="split-section">
         <div className="project-list">
           {projects.map((project) => (
             <article className="project-card" key={project.title}>
               <div className="project-topline">
                 <span>{project.years}</span>
-                <strong>{project.tag}</strong>
+                <div className="project-badges">
+                  <strong>{project.amount}</strong>
+                  <strong>{project.tag}</strong>
+                </div>
               </div>
               <h3>{project.title}</h3>
               <p>{project.body}</p>
@@ -293,82 +383,135 @@ function ProjectsAwards() {
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
 function Team() {
   return (
-    <section className="page-section" id="team">
-      <SectionHeading
-        eyebrow="DX Team"
-        title="地下小分队"
-        intro="围绕基础实验、生信分析和课题设计协作推进，持续输出更扎实的研究结果。"
-      />
+    <div className="tab-content">
+      <SectionHeading title={dxTeam.title} />
+      <article className="dx-panel">
+        <div className="dx-panel-header">
+          <Flame size={20} />
+          <h3>{dxTeam.aboutTitle}</h3>
+        </div>
+        <div className="dx-panel-body">
+          <div className="dx-copy">
+            {dxTeam.statements.map((statement) => (
+              <p className="dx-statement" key={statement}>
+                {statement}
+              </p>
+            ))}
+            <div className="dx-badges">
+              {dxTeam.badges.map((badge) => (
+                <span key={badge}>{badge}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </article>
+      <h3 className="team-members-title">{dxTeam.membersTitle}</h3>
       <div className="team-grid">
         {team.map((member) => (
           <article className="team-card" key={member.name}>
             <img src={member.image} alt={`${member.cn}头像`} />
             <div>
-              <h3>{member.cn}</h3>
-              <span>{member.name}</span>
-              <p>{member.org}</p>
+              <h3>{member.displayName}</h3>
+              <p>{member.school}</p>
+              <span>{member.degree}</span>
               <strong>{member.role}</strong>
             </div>
           </article>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function TabbedContent({ activeTab }) {
+  if (!activeTab) {
+    return null;
+  }
+
+  return (
+    <section className="tabs-section" id="content-tabs">
+      <div className="tab-panel" role="tabpanel">
+        {activeTab === "publications" ? <Publications /> : null}
+        {activeTab === "projects" ? <ProjectsAwards /> : null}
+        {activeTab === "team" ? <Team /> : null}
       </div>
     </section>
   );
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const initialTab = window.location.hash.replace("#", "");
+    return contentTabIds.includes(initialTab) ? initialTab : null;
+  });
+
+  useEffect(() => {
+    const syncTabFromHash = () => {
+      const hashTab = window.location.hash.replace("#", "");
+      setActiveTab(contentTabIds.includes(hashTab) ? hashTab : null);
+    };
+
+    syncTabFromHash();
+    window.addEventListener("hashchange", syncTabFromHash);
+    return () => window.removeEventListener("hashchange", syncTabFromHash);
+  }, []);
+
+  const openTab = (tabId) => {
+    setActiveTab(tabId);
+    window.history.replaceState(null, "", `#${tabId}`);
+    window.requestAnimationFrame(() => {
+      document.getElementById("content-tabs")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
   return (
     <div className="site-shell">
       <AnimatedCells />
       <header className="topbar">
-        <a className="brand" href="#home">
-          <span>XL</span>
-          <strong>刘雪飞</strong>
-        </a>
         <nav aria-label="主导航">
-          <a href="#home">
+          <a
+            href="#home"
+            className={!activeTab ? "is-active" : ""}
+            onClick={() => setActiveTab(null)}
+          >
             <GraduationCap size={17} />
             主页
           </a>
-          <a href="#publications">
-            <BookOpenText size={17} />
-            论文
-          </a>
-          <a href="#projects">
-            <FlaskConical size={17} />
-            项目
-          </a>
-          <a href="#team">
-            <Users size={17} />
-            团队
-          </a>
+          {contentTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                type="button"
+                className={activeTab === tab.id ? "is-active" : ""}
+                key={tab.id}
+                onClick={() => openTab(tab.id)}
+              >
+                <Icon size={17} />
+                {tab.label}
+              </button>
+            );
+          })}
         </nav>
       </header>
 
       <main>
-        <Hero />
-        <Overview />
-        <Publications />
-        <ProjectsAwards />
-        <Team />
+        <PageLayout activeTab={activeTab} />
       </main>
 
       <footer className="footer">
         <span>© 2026 Xuefei Liu</span>
-        <span>
-          <CalendarDays size={16} />
-          Built as a fast static academic homepage
-        </span>
-        <span>
-          <Microscope size={16} />
-          Single-cell and spatial omics
-        </span>
       </footer>
     </div>
   );
